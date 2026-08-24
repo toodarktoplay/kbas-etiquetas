@@ -21,7 +21,7 @@ from reportlab.graphics import renderPDF
 
 # ---------- Plantilla Multi3 4716 (= Avery L7651) ----------
 COLS, FILAS = 5, 13                 # 65 etiquetas por hoja
-ETI_W, ETI_H = 38 * mm, 21.2 * mm   # tamaño de cada etiqueta
+ETI_W, ETI_H = 37.7 * mm, 20.0 * mm  # medida real de la etiqueta impresa
 # La impresora de Salva añade ~1cm de margen extra por cada lado al imprimir
 # (sin la opción "sin márgenes"/borderless). Se compensa aquí: se pide 0mm
 # para que, tras el offset físico de la impresora, caiga en el 1cm real.
@@ -65,11 +65,14 @@ def extraer_refs(texto):
     return refs
 
 
-def generar_pdf(etiquetas, fila_ini, col_ini):
-    """etiquetas: lista de dicts {ref, ean, precio}. Devuelve bytes del PDF."""
+def generar_pdf(etiquetas, fila_ini, col_ini, ajuste_x=0.0, ajuste_y=0.0, hueco_texto=1.2):
+    """etiquetas: lista de dicts {ref, ean, precio}. Devuelve bytes del PDF.
+    ajuste_x/ajuste_y: desplazamiento fino en mm (positivo = derecha/abajo).
+    hueco_texto: separación en mm entre el texto y el código de barras."""
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     _, alto_pag = A4
+    ajuste_x_pt, ajuste_y_pt = ajuste_x * mm, ajuste_y * mm
 
     pos = (fila_ini - 1) * COLS + (col_ini - 1)  # hueco inicial en la hoja
 
@@ -80,8 +83,8 @@ def generar_pdf(etiquetas, fila_ini, col_ini):
         col = hoja_pos % COLS
         fila = hoja_pos // COLS
 
-        x = MARGEN_IZQ + col * PASO_X
-        y = alto_pag - MARGEN_SUP - fila * PASO_Y - ETI_H
+        x = MARGEN_IZQ + col * PASO_X + ajuste_x_pt
+        y = alto_pag - MARGEN_SUP - fila * PASO_Y - ETI_H - ajuste_y_pt
 
         # Línea 1: ref + precio (negrita, pegada al código)
         c.setFont("Helvetica-Bold", 8)
@@ -93,15 +96,16 @@ def generar_pdf(etiquetas, fila_ini, col_ini):
         # Código de barras EAN-13 (el widget recalcula el dígito de control)
         codigo = et["ean"][:12]
         bc = Ean13BarcodeWidget(codigo)
-        bc.barHeight = 13 * mm
-        bc.barWidth = 0.28 * mm
+        bc.barHeight = 12 * mm
+        bc.barWidth = 0.26 * mm
         bc.fontSize = 6
         bc.humanReadable = True
         b = bc.getBounds()
         d = Drawing(b[2] - b[0], b[3] - b[1])
         d.add(bc)
-        d.translate(-b[0], -b[1])  # compensar el origen interno del widget
-        renderPDF.draw(d, c, x + 1.5 * mm, y + 1.2 * mm)
+        d.translate(-b[0], -b[1])
+        y_codigo = y + ETI_H - 3.6 * mm - hueco_texto * mm - (b[3] - b[1])
+        renderPDF.draw(d, c, x + 1.5 * mm, y_codigo)
 
         pos += 1
 
@@ -134,6 +138,16 @@ with c1:
 with c2:
     fila_ini = st.number_input("Empezar en fila (para hojas empezadas)", min_value=1, max_value=FILAS, value=1)
     col_ini = st.number_input("Empezar en columna", min_value=1, max_value=COLS, value=1)
+
+with st.expander("⚙ Ajuste fino de impresión (mueve todo si tu impresora descuadra)"):
+    cc1, cc2, cc3 = st.columns(3)
+    with cc1:
+        ajuste_x = st.number_input("Mover horizontal (mm, + = derecha)", value=0.0, step=0.5, format="%.1f")
+    with cc2:
+        ajuste_y = st.number_input("Mover vertical (mm, + = abajo)", value=0.0, step=0.5, format="%.1f")
+    with cc3:
+        hueco_texto = st.number_input("Separación texto-código (mm)", value=1.2, step=0.2, format="%.1f", min_value=0.0)
+    st.caption("Imprime, mide con una regla cuánto se desvía, y ajusta estos números. La próxima vez ya sale bien a la primera.")
 
 if excel_subido and refs_texto.strip():
     if st.button("Generar PDF de etiquetas", type="primary"):
@@ -170,7 +184,7 @@ if excel_subido and refs_texto.strip():
             st.error("Ninguna de las referencias está en el Excel (o no tienen código de barras).")
             st.stop()
 
-        pdf = generar_pdf(etiquetas, int(fila_ini), int(col_ini))
+        pdf = generar_pdf(etiquetas, int(fila_ini), int(col_ini), ajuste_x, ajuste_y, hueco_texto)
 
         st.success(f"Listo: {len(etiquetas)} etiquetas de {len(refs) - len(no_encontradas) - len(sin_ean)} referencias.")
         if no_encontradas:
