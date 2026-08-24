@@ -78,24 +78,24 @@ def generar_pdf(etiquetas, fila_ini, col_ini):
         x = MARGEN_IZQ + col * PASO_X
         y = alto_pag - MARGEN_SUP - fila * PASO_Y - ETI_H
 
-        # Línea 1: ref + precio
+        # Línea 1: ref + precio (pegada al código)
         c.setFont("Helvetica", 6.4)
         texto = et["ref"]
         if et["precio"] is not None:
             texto += f'  {et["precio"]:.2f} €'.replace(".", ",")
-        c.drawString(x + 1.5 * mm, y + ETI_H - 3.4 * mm, texto)
+        c.drawString(x + 1.5 * mm, y + ETI_H - 3.2 * mm, texto)
 
         # Código de barras EAN-13 (el widget recalcula el dígito de control)
         codigo = et["ean"][:12]
         bc = Ean13BarcodeWidget(codigo)
-        bc.barHeight = 9 * mm
-        bc.barWidth = 0.66 * mm / 3.35  # ancho de módulo ajustado a 35 mm totales
-        bc.fontSize = 5.4
+        bc.barHeight = 11 * mm
+        bc.barWidth = 0.28 * mm
+        bc.fontSize = 6
         bc.humanReadable = True
         b = bc.getBounds()
         d = Drawing(b[2] - b[0], b[3] - b[1])
         d.add(bc)
-        renderPDF.draw(d, c, x + 1.5 * mm, y + 1.6 * mm)
+        renderPDF.draw(d, c, x + 1.5 * mm, y + 1.2 * mm)
 
         pos += 1
 
