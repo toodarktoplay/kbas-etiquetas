@@ -22,10 +22,10 @@ from reportlab.graphics import renderPDF
 # ---------- Plantilla Multi3 4716 (= Avery L7651) ----------
 COLS, FILAS = 5, 13                 # 65 etiquetas por hoja
 ETI_W, ETI_H = 38 * mm, 21.2 * mm   # tamaño de cada etiqueta
-MARGEN_IZQ = 4.75 * mm
-MARGEN_SUP = 10.7 * mm
-PASO_X = 40.64 * mm                 # etiqueta + separación horizontal
-PASO_Y = 21.2 * mm                  # sin separación vertical
+MARGEN_IZQ = 10 * mm
+MARGEN_SUP = 10 * mm
+PASO_X = ETI_W                      # sin separación horizontal entre etiquetas
+PASO_Y = ETI_H                      # sin separación vertical entre etiquetas
 
 PRECIOS = {
     "Sin precio": None,
