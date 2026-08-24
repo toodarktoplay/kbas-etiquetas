@@ -22,8 +22,13 @@ from reportlab.graphics import renderPDF
 # ---------- Plantilla Multi3 4716 (= Avery L7651) ----------
 COLS, FILAS = 5, 13                 # 65 etiquetas por hoja
 ETI_W, ETI_H = 38 * mm, 21.2 * mm   # tamaño de cada etiqueta
-MARGEN_IZQ = 10 * mm
-MARGEN_SUP = 10 * mm
+# La impresora de Salva añade ~1cm de margen extra por cada lado al imprimir
+# (sin la opción "sin márgenes"/borderless). Se compensa aquí: se pide 0mm
+# para que, tras el offset físico de la impresora, caiga en el 1cm real.
+OFFSET_IMPRESORA = 10 * mm
+
+MARGEN_IZQ = 10 * mm - OFFSET_IMPRESORA
+MARGEN_SUP = 10 * mm - OFFSET_IMPRESORA
 PASO_X = ETI_W                      # sin separación horizontal entre etiquetas
 PASO_Y = ETI_H                      # sin separación vertical entre etiquetas
 
