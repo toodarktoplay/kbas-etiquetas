@@ -88,14 +88,15 @@ def generar_pdf(etiquetas, fila_ini, col_ini):
         # Código de barras EAN-13 (el widget recalcula el dígito de control)
         codigo = et["ean"][:12]
         bc = Ean13BarcodeWidget(codigo)
-        bc.barHeight = 11 * mm
+        bc.barHeight = 13 * mm
         bc.barWidth = 0.28 * mm
         bc.fontSize = 6
         bc.humanReadable = True
         b = bc.getBounds()
         d = Drawing(b[2] - b[0], b[3] - b[1])
         d.add(bc)
-        renderPDF.draw(d, c, x + 1.5 * mm, y + 1.2 * mm)
+        d.translate(-b[0], -b[1])  # compensar el origen interno del widget
+        renderPDF.draw(d, c, x + 1.5 * mm, y + 1.6 * mm)
 
         pos += 1
 
