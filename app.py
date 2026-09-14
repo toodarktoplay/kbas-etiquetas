@@ -3,8 +3,8 @@
 Etiquetas de feria — Kbas Office
 Sube el Excel de la temporada, pega las referencias que necesites
 (salteadas, en cualquier orden) y descarga un PDF de etiquetas con
-código de barras EAN-13, listo para imprimir en hojas Multi3 4716
-(A4, 65 etiquetas de 38 x 21,2 mm).
+código de barras EAN-13, listo para imprimir en hojas Multi3 4717
+(A4, 44 etiquetas de 48,5 x 25,4 mm — 4 por línea, 11 filas).
 """
 
 import io
@@ -19,18 +19,25 @@ from reportlab.graphics.barcode.eanbc import Ean13BarcodeWidget
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
 
-# ---------- Plantilla Multi3 4716 (= Avery L7651) ----------
-COLS, FILAS = 5, 13                 # 65 etiquetas por hoja
-ETI_W, ETI_H = 37.7 * mm, 20.0 * mm  # medida real de la etiqueta impresa
-# La impresora de Salva añade ~1cm de margen extra por cada lado al imprimir
-# (sin la opción "sin márgenes"/borderless). Se compensa aquí: se pide 0mm
-# para que, tras el offset físico de la impresora, caiga en el 1cm real.
-OFFSET_IMPRESORA = 10 * mm
+# ---------- Plantilla Multi3 4717 (48,5 x 25,4 mm · 44 por hoja) ----------
+COLS, FILAS = 4, 11                   # 44 etiquetas por hoja (4 por línea)
+ETI_W, ETI_H = 48.5 * mm, 25.4 * mm   # medida real de la etiqueta impresa
 
-MARGEN_IZQ = 10 * mm - OFFSET_IMPRESORA
-MARGEN_SUP = 10 * mm - OFFSET_IMPRESORA
-PASO_X = ETI_W                      # sin separación horizontal entre etiquetas
-PASO_Y = ETI_H                      # sin separación vertical entre etiquetas
+ANCHO_PAG, ALTO_PAG = A4
+
+# La hoja 4717 lleva las etiquetas centradas en el A4 y pegadas entre sí
+# (cantos rectos, sin separación). Calculamos el margen para centrar la
+# cuadrícula: ~8,0 mm a los lados y ~8,8 mm arriba/abajo.
+#
+# OFFSET_IMPRESORA: si tu impresora desplaza todo al imprimir (no borderless),
+# súbelo aquí y se pre-compensa. De momento partimos de 0 y, si hiciera falta,
+# se afina con los sliders de "Ajuste fino" tras una impresión de prueba.
+OFFSET_IMPRESORA = 0 * mm
+
+MARGEN_IZQ = (ANCHO_PAG - COLS * ETI_W) / 2 - OFFSET_IMPRESORA
+MARGEN_SUP = (ALTO_PAG - FILAS * ETI_H) / 2 - OFFSET_IMPRESORA
+PASO_X = ETI_W                        # sin separación horizontal entre etiquetas
+PASO_Y = ETI_H                        # sin separación vertical entre etiquetas
 
 PRECIOS = {
     "Sin precio": None,
@@ -87,25 +94,27 @@ def generar_pdf(etiquetas, fila_ini, col_ini, ajuste_x=0.0, ajuste_y=0.0, hueco_
         y = alto_pag - MARGEN_SUP - fila * PASO_Y - ETI_H - ajuste_y_pt
 
         # Línea 1: ref + precio (negrita, pegada al código)
-        c.setFont("Helvetica-Bold", 8)
+        c.setFont("Helvetica-Bold", 9)
         texto = et["ref"]
         if et["precio"] is not None:
             texto += f'  {et["precio"]:.2f} €'.replace(".", ",")
-        c.drawString(x + 1.5 * mm, y + ETI_H - 3.6 * mm, texto)
+        c.drawString(x + 2.0 * mm, y + ETI_H - 4.0 * mm, texto)
 
         # Código de barras EAN-13 (el widget recalcula el dígito de control)
+        # Con la etiqueta más ancha (48,5 mm) usamos el barcode a tamaño casi
+        # nominal para que escanee mejor en la feria.
         codigo = et["ean"][:12]
         bc = Ean13BarcodeWidget(codigo)
-        bc.barHeight = 12 * mm
-        bc.barWidth = 0.26 * mm
-        bc.fontSize = 6
+        bc.barHeight = 13 * mm
+        bc.barWidth = 0.33 * mm
+        bc.fontSize = 7
         bc.humanReadable = True
         b = bc.getBounds()
         d = Drawing(b[2] - b[0], b[3] - b[1])
         d.add(bc)
         d.translate(-b[0], -b[1])
-        y_codigo = y + ETI_H - 3.6 * mm - hueco_texto * mm - (b[3] - b[1])
-        renderPDF.draw(d, c, x + 1.5 * mm, y_codigo)
+        y_codigo = y + ETI_H - 4.0 * mm - hueco_texto * mm - (b[3] - b[1])
+        renderPDF.draw(d, c, x + 2.0 * mm, y_codigo)
 
         pos += 1
 
@@ -118,7 +127,7 @@ def generar_pdf(etiquetas, fila_ini, col_ini, ajuste_x=0.0, ajuste_y=0.0, hueco_
 st.set_page_config(page_title="Etiquetas de feria · Kbas Office", page_icon="🏷️")
 
 st.title("Etiquetas de feria")
-st.caption("Sube el Excel de la temporada, pega las referencias que necesites (en cualquier orden) y descarga el PDF de etiquetas para hojas Multi3 4716 (65 por hoja).")
+st.caption("Sube el Excel de la temporada, pega las referencias que necesites (en cualquier orden) y descarga el PDF de etiquetas para hojas Multi3 4717 (48,5 x 25,4 mm · 44 por hoja, 4 por línea).")
 
 excel_subido = st.file_uploader(
     "1 · Excel de la temporada (con columnas Ref. y Barcode)",
@@ -133,7 +142,7 @@ refs_texto = st.text_area(
 
 c1, c2 = st.columns(2)
 with c1:
-    unidades = st.number_input("Etiquetas por referencia", min_value=1, max_value=65, value=1)
+    unidades = st.number_input("Etiquetas por referencia", min_value=1, max_value=COLS * FILAS, value=1)
     precio_elegido = st.selectbox("Precio en la etiqueta", list(PRECIOS.keys()), index=0)
 with c2:
     fila_ini = st.number_input("Empezar en fila (para hojas empezadas)", min_value=1, max_value=FILAS, value=1)
