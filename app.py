@@ -72,6 +72,30 @@ def extraer_refs(texto):
     return refs
 
 
+# Patrón de referencia Kbas/Volum: 2 letras + dígitos + _ + dígitos (color)
+REF_RE = re.compile(r"\b([A-Z]{2}\d{5,8}_\d{1,3})\b")
+
+
+def extraer_de_pdf(pdf_bytes):
+    """Lee un albarán / pedido / picking del ERP (PDF con texto) y devuelve
+    una lista de (referencia, unidades) por cada línea de producto.
+    La cantidad es el primer número que aparece antes de la referencia en la línea."""
+    import pdfplumber
+    pares = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            for linea in (page.extract_text() or "").split("\n"):
+                m = REF_RE.search(linea)
+                if not m:
+                    continue
+                ref = m.group(1).upper()
+                antes = linea[:m.start()]
+                mc = re.search(r"(\d+)", antes)
+                uds = int(mc.group(1)) if mc else 1
+                pares.append((ref, uds))
+    return pares
+
+
 def generar_pdf(etiquetas, fila_ini, col_ini, ajuste_x=0.0, ajuste_y=0.0, hueco_texto=1.2):
     """etiquetas: lista de dicts {ref, ean, precio}. Devuelve bytes del PDF.
     ajuste_x/ajuste_y: desplazamiento fino en mm (positivo = derecha/abajo).
@@ -127,22 +151,50 @@ def generar_pdf(etiquetas, fila_ini, col_ini, ajuste_x=0.0, ajuste_y=0.0, hueco_
 st.set_page_config(page_title="Etiquetas de feria · Kbas Office", page_icon="🏷️")
 
 st.title("Etiquetas de feria")
-st.caption("Sube el Excel de la temporada, pega las referencias que necesites (en cualquier orden) y descarga el PDF de etiquetas para hojas Multi3 4717 (48,5 x 25,4 mm · 44 por hoja, 4 por línea).")
+st.caption("Sube el Excel de la temporada y elige las referencias: pégalas a mano, o sube un albarán/pedido/picking en PDF y las saca solo (con sus cantidades). Descarga el PDF de etiquetas para hojas Multi3 4717 (48,5 x 25,4 mm · 44 por hoja, 4 por línea).")
 
 excel_subido = st.file_uploader(
     "1 · Excel de la temporada (con columnas Ref. y Barcode)",
     type=["xlsx", "xlsm"],
 )
 
-refs_texto = st.text_area(
-    "2 · Referencias (una por línea, o separadas por comas o espacios)",
-    height=140,
-    placeholder="KB1472601_00\nKB3802605_41, KT3872613_05\nKB1472603_08",
+st.markdown("**2 · ¿De dónde saco las referencias?**")
+fuente = st.radio(
+    "Fuente de referencias",
+    ["Pegarlas a mano", "Subir albarán / pedido / picking (PDF)"],
+    label_visibility="collapsed",
 )
+
+refs_texto = ""
+pdf_subido = None
+usar_cant_doc = True
+if fuente == "Pegarlas a mano":
+    refs_texto = st.text_area(
+        "Referencias (una por línea, o separadas por comas o espacios)",
+        height=140,
+        placeholder="KB1472601_00\nKB3802605_41, KT3872613_05\nKB1472603_08",
+    )
+else:
+    pdf_subido = st.file_uploader("Albarán / pedido / picking (PDF del ERP)", type=["pdf"])
+    usar_cant_doc = st.checkbox(
+        "Usar las cantidades del documento (nº de etiquetas = unidades de cada línea)",
+        value=True,
+    )
+    if pdf_subido is not None:
+        try:
+            _prev = extraer_de_pdf(pdf_subido.getvalue())
+            if _prev:
+                muestra = ", ".join(f"{u}×{r}" for r, u in _prev[:6]) + (" …" if len(_prev) > 6 else "")
+                st.caption(f"📄 Detectadas {len(_prev)} líneas · {sum(u for _, u in _prev)} unidades — {muestra}")
+            else:
+                st.warning("No he detectado referencias en ese PDF. ¿Es un albarán/pedido del ERP con texto (no un escaneo)?")
+        except Exception as e:
+            st.warning(f"No pude leer el PDF para la vista previa: {e}")
 
 c1, c2 = st.columns(2)
 with c1:
-    unidades = st.number_input("Etiquetas por referencia", min_value=1, max_value=COLS * FILAS, value=1)
+    unidades = st.number_input("Etiquetas por referencia (si NO uso las cantidades del documento)",
+                               min_value=1, max_value=COLS * FILAS, value=1)
     precio_elegido = st.selectbox("Precio en la etiqueta", list(PRECIOS.keys()), index=0)
 with c2:
     fila_ini = st.number_input("Empezar en fila (para hojas empezadas)", min_value=1, max_value=FILAS, value=1)
@@ -158,7 +210,10 @@ with st.expander("⚙ Ajuste fino de impresión (mueve todo si tu impresora desc
         hueco_texto = st.number_input("Separación texto-código (mm)", value=1.2, step=0.2, format="%.1f", min_value=0.0)
     st.caption("Imprime, mide con una regla cuánto se desvía, y ajusta estos números. La próxima vez ya sale bien a la primera.")
 
-if excel_subido and refs_texto.strip():
+hay_pegado = fuente == "Pegarlas a mano" and refs_texto.strip()
+hay_pdf = fuente != "Pegarlas a mano" and pdf_subido is not None
+
+if excel_subido and (hay_pegado or hay_pdf):
     if st.button("Generar PDF de etiquetas", type="primary"):
         try:
             df = pd.read_excel(io.BytesIO(excel_subido.getvalue()))
@@ -173,20 +228,37 @@ if excel_subido and refs_texto.strip():
         df["_ref"] = df["Ref."].astype(str).str.strip().str.upper()
         col_precio = PRECIOS[precio_elegido]
 
-        refs = extraer_refs(refs_texto)
-        etiquetas, no_encontradas, sin_ean = [], [], []
-        for ref in refs:
+        # Lista de (referencia, cantidad) según la fuente elegida
+        if hay_pdf:
+            try:
+                pares = extraer_de_pdf(pdf_subido.getvalue())
+            except Exception as e:
+                st.error(f"No puedo leer el PDF: {e}")
+                st.stop()
+            if not pares:
+                st.error("No he encontrado ninguna referencia en el PDF. ¿Es un albarán/pedido del ERP con texto (no un escaneo)?")
+                st.stop()
+            if not usar_cant_doc:
+                pares = [(ref, int(unidades)) for ref, _ in pares]
+        else:
+            pares = [(ref, int(unidades)) for ref in extraer_refs(refs_texto)]
+
+        etiquetas, no_encontradas, sin_ean, refs_vistas = [], [], [], set()
+        for ref, cant in pares:
+            refs_vistas.add(ref)
             fila = df[df["_ref"] == ref]
             if fila.empty:
-                no_encontradas.append(ref)
+                if ref not in no_encontradas:
+                    no_encontradas.append(ref)
                 continue
             fila = fila.iloc[0]
             ean = re.sub(r"\D", "", limpiar(fila.get("Barcode")))
             if len(ean) < 12:
-                sin_ean.append(ref)
+                if ref not in sin_ean:
+                    sin_ean.append(ref)
                 continue
             precio = a_precio(fila.get(col_precio)) if col_precio else None
-            for _ in range(int(unidades)):
+            for _ in range(int(cant)):
                 etiquetas.append({"ref": ref, "ean": ean, "precio": precio})
 
         if not etiquetas:
@@ -195,7 +267,10 @@ if excel_subido and refs_texto.strip():
 
         pdf = generar_pdf(etiquetas, int(fila_ini), int(col_ini), ajuste_x, ajuste_y, hueco_texto)
 
-        st.success(f"Listo: {len(etiquetas)} etiquetas de {len(refs) - len(no_encontradas) - len(sin_ean)} referencias.")
+        ok_refs = len(refs_vistas) - len(no_encontradas) - len(sin_ean)
+        st.success(f"Listo: {len(etiquetas)} etiquetas de {ok_refs} referencias.")
+        if hay_pdf and usar_cant_doc:
+            st.caption("Nº de etiquetas = unidades de cada línea del documento.")
         if no_encontradas:
             with st.expander(f"⚠ {len(no_encontradas)} referencias no están en el Excel"):
                 st.text("\n".join(no_encontradas))
@@ -211,4 +286,4 @@ if excel_subido and refs_texto.strip():
         )
         st.caption("Al imprimir: tamaño real / escala 100%, sin 'ajustar a la página', para que caigan clavadas en las pegatinas.")
 else:
-    st.info("Sube el Excel y pega al menos una referencia para empezar.")
+    st.info("Sube el Excel y elige las referencias (pégalas o sube un albarán/pedido en PDF) para empezar.")
