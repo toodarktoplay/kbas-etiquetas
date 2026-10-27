@@ -72,8 +72,8 @@ def extraer_refs(texto):
     return refs
 
 
-# Patrón de referencia Kbas/Volum: 2 letras + dígitos + _ + dígitos (color)
-REF_RE = re.compile(r"\b([A-Z]{2}\d{5,8}_\d{1,3})\b")
+# Patrón de referencia Kbas/Volum: 2-3 letras (KB, KC, KT, VB, VBP…) + dígitos + _ + dígitos (color)
+REF_RE = re.compile(r"\b([A-Z]{2,3}\d{5,8}_\d{1,3})\b")
 
 
 def extraer_de_pdf(pdf_bytes):
@@ -89,9 +89,11 @@ def extraer_de_pdf(pdf_bytes):
                 if not m:
                     continue
                 ref = m.group(1).upper()
+                # UDS = el número JUSTO antes de la referencia (la columna UDS. va
+                # siempre pegada a REF). Así ignoramos Box/Pick/Cajas del picking.
                 antes = linea[:m.start()]
-                mc = re.search(r"(\d+)", antes)
-                uds = int(mc.group(1)) if mc else 1
+                nums = re.findall(r"\d+", antes)
+                uds = int(nums[-1]) if nums else 1
                 pares.append((ref, uds))
     return pares
 
